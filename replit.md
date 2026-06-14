@@ -1,36 +1,59 @@
-# [Project name]
+# RAG Forge
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Enterprise RAG system with BM25 hybrid retrieval, neural re-ranking, streaming LLM answers via Groq, and full pipeline telemetry.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `artifacts/api-server: API Server` — Python FastAPI backend (uvicorn, port 8080, auto-reload)
+- `artifacts/ragforge: web` — React/Vite frontend (port 18324)
+- `artifacts/mockup-sandbox: Component Preview Server` — Canvas design sandbox
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- **Frontend**: React 18 + Vite + TailwindCSS + React Query + React Router v6
+- **Backend**: Python FastAPI + SQLAlchemy + SQLite (aiosqlite)
+- **Retrieval**: BM25 Hybrid (keyword + TF-IDF + proximity scoring)
+- **Re-Ranker**: Cross-encoder simulation (coverage + density + phrase scoring)
+- **LLM**: Groq Cloud LPU — LLaMA 3.3 70B Versatile
+- **Auth**: JWT (access + refresh tokens) + OTP password reset
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `ragforge/backend/` — Python FastAPI app
+- `ragforge/backend/app/api/rag.py` — BM25 retrieval + reranking + Groq streaming
+- `ragforge/backend/app/api/dashboard.py` — Analytics stats and activity
+- `ragforge/backend/app/api/documents.py` — File upload + text extraction + chunking
+- `ragforge/backend/app/api/collections.py` — Collection CRUD
+- `ragforge/backend/app/api/auth.py` — JWT auth + OTP reset
+- `ragforge/backend/app/models/models.py` — SQLAlchemy ORM models
+- `artifacts/ragforge/src/pages/` — All React page components
+- `artifacts/ragforge/src/api/` — Frontend API clients
+
+## Pages
+
+- `/` — Public landing page (marketing)
+- `/login`, `/register`, `/forgot-password` — Auth
+- `/dashboard` — KPIs, charts, recent queries
+- `/collections` — Collection management
+- `/collections/:id` — Collection detail + chunking view
+- `/collections/:id/documents` — Document upload
+- `/ask` — Chat interface with streaming + sources
+- `/compare` — With vs Without re-ranker comparison
+- `/history` — Query history + CSV export + search
+- `/settings` — Profile, pipeline config, system telemetry
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- ChromaDB blocked by Replit package firewall → BM25 hybrid search in pure Python
+- sentence-transformers replaced by BM25 + rerank score simulation (coverage × density × phrase)
+- SQLite with absolute path to prevent CWD-dependent DB location issues
+- GROQ_API_KEY read from Replit Secrets (not .env) via pydantic-settings env var injection
+- Backend CRLF issue: always use `bash cat >` to write Python files (not write tool)
 
-## Product
+## Required secrets
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- `GROQ_API_KEY` — Groq Cloud API key (set in Replit Secrets)
+- `SESSION_SECRET` — available, used for JWT signing (SECRET_KEY in .env)
 
 ## User preferences
 
@@ -38,8 +61,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- All Python backend files have CRLF endings from the original zip — use bash to overwrite them
+- Backend DB at `/home/runner/workspace/ragforge/backend/ragforge.db` (absolute path in .env)
+- The api-server workflow runs `cd /home/runner/workspace/ragforge/backend && uvicorn ...`
+- uvicorn auto-reloads on Python file changes — no manual restart needed for backend edits

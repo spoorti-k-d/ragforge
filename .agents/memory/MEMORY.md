@@ -1,0 +1,3 @@
+- [RAGForge Python CRLF issue](ragforge-crlf.md) — All Python backend files have CRLF endings; always use bash cat> to write them, never the write tool
+- [RAGForge blocked packages](ragforge-packages.md) — ChromaDB + sentence-transformers blocked by Replit firewall; BM25 hybrid search used instead
+- [RAGForge backend run command](ragforge-run.md) — API server runs uvicorn from ragforge/backend dir; managed by artifact.toml not configureWorkflow

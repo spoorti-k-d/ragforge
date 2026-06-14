@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { History, ChevronDown, ChevronRight, Clock, Target, Zap, Database } from 'lucide-react'
+import { History, ChevronDown, ChevronRight, Clock, Zap, Database, Download, Search } from 'lucide-react'
 import { ragApi } from '@/api/rag'
 import { collectionsApi } from '@/api/collections'
 import { PageHeader, EmptyState, SkeletonRows, ConfidenceBar, formatMs } from '@/components/ui'
@@ -8,8 +8,32 @@ import { formatLocalTime } from '@/utils/date'
 import clsx from 'clsx'
 import type { Citation } from '@/types'
 
+function exportCSV(logs: any[]) {
+  const headers = ['Question', 'Collection', 'Confidence', 'Retrieval ms', 'Rerank ms', 'LLM ms', 'Total ms', 'Reranked', 'Date']
+  const rows = logs.map((l) => [
+    `"${(l.question || '').replace(/"/g, '""')}"`,
+    l.collection_id || '',
+    l.confidence_score?.toFixed(1) || '',
+    l.retrieval_time_ms || 0,
+    l.rerank_time_ms || 0,
+    l.llm_time_ms || 0,
+    l.total_time_ms || 0,
+    l.used_reranker ? 'yes' : 'no',
+    l.created_at || '',
+  ])
+  const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `ragforge-history-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function HistoryPage() {
   const [collectionFilter, setCollectionFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const { data: collections = [] } = useQuery({
@@ -19,7 +43,7 @@ export default function HistoryPage() {
 
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['query-logs', collectionFilter],
-    queryFn: () => ragApi.getLogs(collectionFilter || undefined, 0, 100),
+    queryFn: () => ragApi.getLogs(collectionFilter || undefined, 0, 200),
     refetchInterval: 30_000,
   })
 
@@ -29,36 +53,60 @@ export default function HistoryPage() {
     enabled: !!expandedId,
   })
 
+  const filtered = searchQuery.trim()
+    ? logs.filter((l) => l.question.toLowerCase().includes(searchQuery.toLowerCase()))
+    : logs
+
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto">
       <PageHeader
         title="Query History"
-        subtitle={`${logs.length} queries logged`}
+        subtitle={`${filtered.length} of ${logs.length} queries`}
         action={
-          <select
-            className="input w-48 text-sm bg-bg-secondary"
-            value={collectionFilter}
-            onChange={(e) => setCollectionFilter(e.target.value)}
+          <button
+            onClick={() => exportCSV(filtered)}
+            disabled={filtered.length === 0}
+            className="btn-secondary flex items-center gap-2 text-sm px-4 py-2"
           >
-            <option value="">All collections</option>
-            {collections.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
         }
       />
 
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+          <input
+            className="input pl-9 w-full"
+            placeholder="Search questions…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <select
+          className="input w-full sm:w-52 text-sm"
+          value={collectionFilter}
+          onChange={(e) => setCollectionFilter(e.target.value)}
+        >
+          <option value="">All collections</option>
+          {collections.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+
       {isLoading ? (
         <SkeletonRows rows={6} />
-      ) : logs.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={History}
-          title="No queries yet"
-          description="Ask questions about your documents and they'll appear here with full metadata."
+          title={searchQuery ? 'No matching queries' : 'No queries yet'}
+          description={searchQuery ? 'Try a different search term.' : 'Ask questions about your documents and they\'ll appear here with full metadata.'}
         />
       ) : (
         <div className="space-y-3">
-          {logs.map((log) => {
+          {filtered.map((log) => {
             const isExpanded = expandedId === log.id
             return (
               <div key={log.id} className={clsx('card transition-all duration-300', isExpanded && 'border-brand-indigo/40 shadow-glow-indigo')}>
@@ -67,7 +115,7 @@ export default function HistoryPage() {
                   onClick={() => setExpandedId(isExpanded ? null : log.id)}
                 >
                   <div className="flex items-start gap-4">
-                    <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors", isExpanded ? "bg-brand-indigo text-white" : "bg-brand-indigo-dim text-brand-indigo-light")}>
+                    <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors', isExpanded ? 'bg-brand-indigo text-white' : 'bg-brand-indigo-dim text-brand-indigo-light')}>
                       <Zap className="w-5 h-5" />
                     </div>
 
@@ -78,7 +126,7 @@ export default function HistoryPage() {
                           <Clock className="w-3.5 h-3.5" />
                           {formatLocalTime(log.created_at)}
                         </span>
-                        {log.total_time_ms && (
+                        {log.total_time_ms != null && (
                           <span className="text-text-muted text-xs font-mono">{formatMs(log.total_time_ms)}</span>
                         )}
                         {log.used_reranker && (
@@ -93,7 +141,7 @@ export default function HistoryPage() {
                           <ConfidenceBar score={log.confidence_score} />
                         </div>
                       )}
-                      <div className={clsx("p-1.5 rounded-md transition-colors", isExpanded ? "bg-bg-hover" : "hover:bg-bg-hover")}>
+                      <div className={clsx('p-1.5 rounded-md transition-colors', isExpanded ? 'bg-bg-hover' : 'hover:bg-bg-hover')}>
                         {isExpanded ? <ChevronDown className="w-4 h-4 text-text-primary" /> : <ChevronRight className="w-4 h-4 text-text-muted" />}
                       </div>
                     </div>
@@ -106,7 +154,6 @@ export default function HistoryPage() {
                       <SkeletonRows rows={3} />
                     ) : logDetail ? (
                       <>
-                        {/* Answer */}
                         <div>
                           <p className="text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Generated Answer</p>
                           <div className="bg-bg-secondary border border-bg-border rounded-xl p-5 text-text-primary text-sm leading-relaxed shadow-inner">
@@ -114,7 +161,6 @@ export default function HistoryPage() {
                           </div>
                         </div>
 
-                        {/* Pipeline Timing */}
                         <div>
                           <p className="text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Pipeline Telemetry</p>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -126,7 +172,7 @@ export default function HistoryPage() {
                             ].map(({ label, value }) => (
                               <div key={label} className="bg-bg-secondary border border-bg-border rounded-xl px-4 py-3 text-center transition-colors hover:border-brand-indigo/30">
                                 <div className="text-brand-indigo-light font-mono font-bold text-lg">
-                                  {value ? formatMs(value) : '—'}
+                                  {value != null ? formatMs(value) : '—'}
                                 </div>
                                 <div className="text-text-muted text-xs mt-1 font-medium">{label}</div>
                               </div>
@@ -134,7 +180,6 @@ export default function HistoryPage() {
                           </div>
                         </div>
 
-                        {/* Citations */}
                         {logDetail.citations?.length > 0 && (
                           <div>
                             <p className="text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
@@ -147,6 +192,15 @@ export default function HistoryPage() {
                                   {c.document_name} <span className="text-text-muted ml-1">· chunk_{c.chunk_index}</span>
                                 </span>
                               ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {logDetail.confidence_score != null && (
+                          <div>
+                            <p className="text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Confidence Score</p>
+                            <div className="max-w-xs">
+                              <ConfidenceBar score={logDetail.confidence_score} />
                             </div>
                           </div>
                         )}

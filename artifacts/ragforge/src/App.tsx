@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/stores/authStore'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
@@ -12,6 +13,7 @@ import DocumentsPage from '@/pages/DocumentsPage'
 import AskPage from '@/pages/AskPage'
 import HistoryPage from '@/pages/HistoryPage'
 import SettingsPage from '@/pages/SettingsPage'
+import ComparePage from '@/pages/ComparePage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -44,20 +46,21 @@ export default function App() {
         }}
       />
       <Routes>
+        <Route path="/"                 element={<PublicRoute><LandingPage /></PublicRoute>} />
         <Route path="/login"            element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/register"         element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/forgot-password"  element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
-        <Route path="/" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard"                       element={<DashboardPage />} />
-          <Route path="collections"                     element={<CollectionsPage />} />
-          <Route path="collections/:id"                 element={<CollectionDetailPage />} />
-          <Route path="collections/:id/documents"       element={<DocumentsPage />} />
-          <Route path="ask"                             element={<AskPage />} />
-          <Route path="history"                         element={<HistoryPage />} />
-          <Route path="settings"                        element={<SettingsPage />} />
+        <Route element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
+          <Route path="/dashboard"                       element={<DashboardPage />} />
+          <Route path="/collections"                     element={<CollectionsPage />} />
+          <Route path="/collections/:id"                 element={<CollectionDetailPage />} />
+          <Route path="/collections/:id/documents"       element={<DocumentsPage />} />
+          <Route path="/ask"                             element={<AskPage />} />
+          <Route path="/history"                         element={<HistoryPage />} />
+          <Route path="/compare"                         element={<ComparePage />} />
+          <Route path="/settings"                        element={<SettingsPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

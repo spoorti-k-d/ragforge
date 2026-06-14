@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Database, Sparkles,
   History, Settings, LogOut, Menu, X, ChevronRight,
-  Zap, User,
+  Zap, User, GitCompare,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useQuery } from '@tanstack/react-query'
@@ -12,16 +12,17 @@ import clsx from 'clsx'
 import { UserProfileModal } from '@/components/ui/UserProfileModal'
 
 const NAV_ITEMS = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/collections', icon: Database, label: 'Collections' },
-  { to: '/ask', icon: Sparkles, label: 'Ask AI' },
-  { to: '/history', icon: History, label: 'Query History' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/collections', icon: Database,        label: 'Collections' },
+  { to: '/ask',         icon: Sparkles,        label: 'Ask AI' },
+  { to: '/compare',     icon: GitCompare,      label: 'Compare' },
+  { to: '/history',     icon: History,         label: 'Query History' },
+  { to: '/settings',    icon: Settings,        label: 'Settings' },
 ]
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [isProfileOpen, setIsProfileOpen] = useState(false) // New state for profile modal
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
   const { logout, user, setUser } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
@@ -51,22 +52,20 @@ export default function DashboardLayout() {
   }, [location.pathname])
 
   const handleLogout = (e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent modal from opening when clicking logout
+    e.stopPropagation()
     logout()
     navigate('/login')
   }
 
   return (
     <div className="flex h-screen bg-bg-primary overflow-hidden">
-      {/* Mobile Backdrop */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={clsx(
           'flex flex-col bg-bg-secondary border-r border-bg-border transition-all duration-300 fixed lg:relative z-30 h-full shadow-2xl lg:shadow-none',
@@ -107,7 +106,7 @@ export default function DashboardLayout() {
             >
               {({ isActive }) => (
                 <>
-                  <Icon className={clsx('w-5 h-5 flex-shrink-0 transition-transform duration-200', !isActive && 'group-hover:scale-110', !sidebarOpen && "mx-auto")} />
+                  <Icon className={clsx('w-5 h-5 flex-shrink-0 transition-transform duration-200', !isActive && 'group-hover:scale-110', !sidebarOpen && 'mx-auto')} />
                   {sidebarOpen && <span className="animate-in fade-in">{label}</span>}
                   {sidebarOpen && isActive && <ChevronRight className="w-4 h-4 ml-auto opacity-60" />}
                 </>
@@ -116,9 +115,8 @@ export default function DashboardLayout() {
           ))}
         </nav>
 
-        {/* Updated User Section - Clickable */}
         <div className="px-3 pb-4 pt-3 border-t border-bg-border/60">
-          <button 
+          <button
             onClick={() => setIsProfileOpen(true)}
             className={clsx(
               'flex items-center gap-3 px-3 py-3 rounded-xl transition-colors w-full text-left hover:bg-bg-card',
@@ -135,7 +133,7 @@ export default function DashboardLayout() {
               </div>
             )}
             {sidebarOpen && (
-              <div 
+              <div
                 onClick={handleLogout}
                 className="p-2 rounded-lg text-text-muted hover:text-brand-red hover:bg-brand-red/10 transition-colors"
                 title="Terminate Session"
@@ -159,15 +157,14 @@ export default function DashboardLayout() {
             <Menu className="w-5 h-5" />
           </button>
         </div>
-        
+
         <Outlet />
       </main>
 
-      {/* Modal Triggered by Click */}
-      <UserProfileModal 
-        open={isProfileOpen} 
-        onClose={() => setIsProfileOpen(false)} 
-        user={user} 
+      <UserProfileModal
+        open={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
       />
     </div>
   )
