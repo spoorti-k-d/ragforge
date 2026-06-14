@@ -46,18 +46,45 @@ def _extract_text(content: bytes, file_type: str, filename: str) -> str:
     if file_type == 'html':
         text = re.sub(r'<[^>]+>', ' ', content.decode('utf-8', errors='replace'))
         return re.sub(r'\s+', ' ', text).strip()
-    # PDF: simple byte extraction (no pdfplumber dep)
+    # PDF: multi-strategy extraction
     if file_type == 'pdf':
+        # Strategy 1: Try pypdf (best text layer extraction)
+        try:
+            import pypdf, io as _io
+            reader = pypdf.PdfReader(_io.BytesIO(content))
+            pages = []
+            for page in reader.pages:
+                t = page.extract_text() or ''
+                if t.strip():
+                    pages.append(t.strip())
+            text = '\n\n'.join(pages)
+            # Validate quality: >40% printable alpha chars
+            alpha = sum(1 for c in text if c.isalpha())
+            if text and alpha / max(len(text), 1) > 0.35:
+                return re.sub(r'\s+', ' ', text).strip()
+        except Exception:
+            pass
+        # Strategy 2: Extract readable ASCII from raw bytes (handles some encoded PDFs)
         raw = content.decode('latin-1', errors='replace')
-        # Extract text between stream...endstream markers
-        streams = re.findall(r'stream\r?\n(.*?)\r?\nendstream', raw, re.DOTALL)
-        parts = []
-        for s in streams:
-            # Grab printable ASCII runs
-            parts.append(re.sub(r'[^\x20-\x7e\n]', ' ', s))
-        text = '\n'.join(parts)
+        # Look for BT/ET text blocks
+        bt_blocks = re.findall(r'BT(.*?)ET', raw, re.DOTALL)
+        words = []
+        for block in bt_blocks:
+            # Extract strings in parentheses
+            strings = re.findall(r'\(([^)]{2,})\)', block)
+            for s in strings:
+                cleaned = re.sub(r'[^\x20-\x7e]', '', s).strip()
+                if len(cleaned) > 2:
+                    words.append(cleaned)
+        text = ' '.join(words)
         text = re.sub(r'\s+', ' ', text).strip()
-        return text if len(text) > 100 else f"[PDF: {filename}] (text extraction limited)"
+        if len(text) > 200:
+            return text
+        # Strategy 3: Raw printable extraction
+        streams = re.findall(r'stream\r?\n(.*?)\r?\nendstream', raw, re.DOTALL)
+        parts = [re.sub(r'[^\x20-\x7e\n]', ' ', s) for s in streams]
+        text = re.sub(r'\s+', ' ', '\n'.join(parts)).strip()
+        return text if len(text) > 100 else f"[PDF: {filename}] — This PDF appears to be image-based or encrypted. Please upload a text-based PDF."
     # DOCX: extract from XML
     if file_type == 'docx':
         import zipfile, io

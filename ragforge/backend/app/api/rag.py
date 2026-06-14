@@ -21,15 +21,24 @@ router = APIRouter()
 # Groq client (lazy init)
 # ---------------------------------------------------------------------------
 _groq_client = None
+_groq_key_used = None
 
 def _get_groq():
-    global _groq_client
-    if _groq_client is None:
-        from groq import Groq
+    global _groq_client, _groq_key_used
+    # Always try to load from .env file first (overrides stale env var)
+    try:
+        from dotenv import dotenv_values
+        env_file = dotenv_values('/home/runner/workspace/ragforge/backend/.env')
+        api_key = env_file.get('GROQ_API_KEY', '') or os.environ.get('GROQ_API_KEY', '')
+    except Exception:
         api_key = os.environ.get('GROQ_API_KEY', '')
-        if not api_key:
-            raise HTTPException(status_code=503, detail='GROQ_API_KEY not configured')
+    if not api_key:
+        raise HTTPException(status_code=503, detail='GROQ_API_KEY not configured')
+    # Re-create client only if key changed
+    if _groq_client is None or api_key != _groq_key_used:
+        from groq import Groq
         _groq_client = Groq(api_key=api_key)
+        _groq_key_used = api_key
     return _groq_client
 
 
