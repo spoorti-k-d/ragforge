@@ -12,5 +12,8 @@ paths = ["/api"]
 [services.development]
 run = "cd /home/runner/workspace/ragforge/backend && uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
 
+[services.production]
+run = "cd /home/runner/workspace/ragforge/backend && uvicorn app.main:app --host 0.0.0.0 --port 8080"
+
 [services.env]
 GROQ_API_KEY = ""
