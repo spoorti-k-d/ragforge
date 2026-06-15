@@ -19,8 +19,8 @@
 | Name | Role |
 |------|------|
 | **M. Shankar Reddy** | Backend — RAG pipeline, BM25 retrieval, re-ranker, Groq LLM integration |
-| **D. Spoorti** | Full-stack — API design, document ingestion, auth, deployment |
-| **G. Mounika** | Frontend — React UI, dashboard, streaming interface, mobile responsiveness |
+| **G. Mounika** | Backend — FastAPI routes, document ingestion, auth, database models |
+| **D. Spoorti** | Frontend — React UI, dashboard, streaming interface, mobile responsiveness |
 
 ---
 
