@@ -371,6 +371,6 @@ MIT License — OSC AI/ML Hackathon 2026
 
 <div align="center">
 
-Built with ⚡ by Team RAG Forge · OSC Hackathon 2026
+Built with ⚡ by Team Eagle Eye · OSC Hackathon 2026
 
 </div>
