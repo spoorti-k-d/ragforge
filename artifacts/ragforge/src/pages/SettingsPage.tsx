@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/authStore'
+import { authApi } from '@/api/auth'
 import { PageHeader } from '@/components/ui'
 import {
-  User, KeyRound, Server, Cpu, CheckCircle2, Info, Zap, Globe
+  User, KeyRound, Server, Cpu, CheckCircle2, Info, Zap, Globe, Save, Eye, EyeOff
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -49,66 +50,196 @@ export default function SettingsPage() {
   )
 }
 
+function Toast({ message, type }: { message: string; type: 'success' | 'error' }) {
+  return (
+    <div className={clsx(
+      'flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold border',
+      type === 'success'
+        ? 'bg-brand-green/10 text-brand-green border-brand-green/20'
+        : 'bg-red-500/10 text-red-400 border-red-500/20'
+    )}>
+      {type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Info className="w-4 h-4 flex-shrink-0" />}
+      {message}
+    </div>
+  )
+}
+
 function ProfileSettings({ user, setUser }: { user: any; setUser: (u: any) => void }) {
-  const [form, setForm] = useState({ full_name: user?.full_name || '', email: user?.email || '' })
+  const [nameForm, setNameForm] = useState({ full_name: user?.full_name || '' })
+  const [nameSaving, setNameSaving] = useState(false)
+  const [nameMsg, setNameMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+
   const [pwForm, setPwForm] = useState({ current: '', new: '', confirm: '' })
+  const [pwSaving, setPwSaving] = useState(false)
+  const [pwMsg, setPwMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+
+  async function handleSaveName(e: React.FormEvent) {
+    e.preventDefault()
+    if (!nameForm.full_name.trim()) return
+    setNameSaving(true)
+    setNameMsg(null)
+    try {
+      const updated = await authApi.updateProfile(nameForm.full_name.trim())
+      setUser({ ...user, full_name: updated.full_name })
+      setNameMsg({ text: 'Profile updated successfully.', type: 'success' })
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || 'Failed to update profile.'
+      setNameMsg({ text: detail, type: 'error' })
+    } finally {
+      setNameSaving(false)
+    }
+  }
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (pwForm.new !== pwForm.confirm) {
+      setPwMsg({ text: 'New passwords do not match.', type: 'error' })
+      return
+    }
+    if (pwForm.new.length < 8) {
+      setPwMsg({ text: 'New password must be at least 8 characters.', type: 'error' })
+      return
+    }
+    setPwSaving(true)
+    setPwMsg(null)
+    try {
+      await authApi.changePassword(pwForm.current, pwForm.new)
+      setPwMsg({ text: 'Password changed successfully.', type: 'success' })
+      setPwForm({ current: '', new: '', confirm: '' })
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || 'Failed to change password.'
+      setPwMsg({ text: detail, type: 'error' })
+    } finally {
+      setPwSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-      <div className="card">
-        <div className="flex items-center gap-3 mb-6">
-          <User className="w-5 h-5 text-brand-indigo-light" />
-          <h2 className="font-bold text-text-primary text-lg tracking-tight">Profile Information</h2>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="label">Full name</label>
-            <input className="input" value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} />
+      <form onSubmit={handleSaveName}>
+        <div className="card">
+          <div className="flex items-center gap-3 mb-6">
+            <User className="w-5 h-5 text-brand-indigo-light" />
+            <h2 className="font-bold text-text-primary text-lg tracking-tight">Profile Information</h2>
           </div>
-          <div>
-            <label className="label">Email address</label>
-            <input type="email" className="input bg-bg-primary/50 text-text-muted" value={form.email} disabled />
-            <p className="text-text-muted text-[10px] uppercase font-bold tracking-widest mt-2 flex items-center gap-1.5">
-              <Info className="w-3 h-3" /> Email cannot be modified post-registration
-            </p>
-          </div>
-          <div className="flex items-center gap-3 pt-3">
-            <div className={clsx('badge px-3 py-1.5', user?.is_admin ? 'bg-brand-amber/10 text-brand-amber border border-brand-amber/20' : 'bg-bg-hover text-text-muted border border-bg-border')}>
-              {user?.is_admin ? '✦ Administrator' : 'Standard User'}
+          <div className="space-y-4">
+            <div>
+              <label className="label">Full name</label>
+              <input
+                className="input"
+                value={nameForm.full_name}
+                onChange={(e) => setNameForm({ full_name: e.target.value })}
+                placeholder="Your display name"
+                required
+              />
             </div>
-            <div className="badge px-3 py-1.5 bg-brand-green/10 text-brand-green border border-brand-green/20">
-              ● Active Account
+            <div>
+              <label className="label">Email address</label>
+              <input type="email" className="input bg-bg-primary/50 text-text-muted" value={user?.email || ''} disabled />
+              <p className="text-text-muted text-[10px] uppercase font-bold tracking-widest mt-2 flex items-center gap-1.5">
+                <Info className="w-3 h-3" /> Email cannot be modified post-registration
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-1">
+              <div className={clsx('badge px-3 py-1.5', user?.is_admin ? 'bg-brand-amber/10 text-brand-amber border border-brand-amber/20' : 'bg-bg-hover text-text-muted border border-bg-border')}>
+                {user?.is_admin ? '✦ Administrator' : 'Standard User'}
+              </div>
+              <div className="badge px-3 py-1.5 bg-brand-green/10 text-brand-green border border-brand-green/20">
+                ● Active Account
+              </div>
+            </div>
+            {nameMsg && <Toast message={nameMsg.text} type={nameMsg.type} />}
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={nameSaving || !nameForm.full_name.trim()}
+                className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {nameSaving ? (
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {nameSaving ? 'Saving…' : 'Save Changes'}
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      </form>
 
-      <div className="card">
-        <div className="flex items-center gap-3 mb-6">
-          <KeyRound className="w-5 h-5 text-brand-indigo-light" />
-          <h2 className="font-bold text-text-primary text-lg tracking-tight">Security & Passwords</h2>
+      <form onSubmit={handleChangePassword}>
+        <div className="card">
+          <div className="flex items-center gap-3 mb-6">
+            <KeyRound className="w-5 h-5 text-brand-indigo-light" />
+            <h2 className="font-bold text-text-primary text-lg tracking-tight">Change Password</h2>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="label">Current password</label>
+              <div className="relative">
+                <input
+                  type={showCurrent ? 'text' : 'password'}
+                  className="input pr-10"
+                  value={pwForm.current}
+                  onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))}
+                  placeholder="••••••••"
+                  required
+                />
+                <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                  {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">New password</label>
+              <div className="relative">
+                <input
+                  type={showNew ? 'text' : 'password'}
+                  className="input pr-10"
+                  value={pwForm.new}
+                  onChange={(e) => setPwForm((f) => ({ ...f, new: e.target.value }))}
+                  placeholder="Min. 8 characters"
+                  required
+                />
+                <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                  {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">Confirm new password</label>
+              <input
+                type="password"
+                className={clsx('input', pwForm.confirm && pwForm.new !== pwForm.confirm ? 'border-red-500/50' : '')}
+                value={pwForm.confirm}
+                onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
+                placeholder="Repeat new password"
+                required
+              />
+              {pwForm.confirm && pwForm.new !== pwForm.confirm && (
+                <p className="text-red-400 text-xs mt-1.5">Passwords do not match</p>
+              )}
+            </div>
+            {pwMsg && <Toast message={pwMsg.text} type={pwMsg.type} />}
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={pwSaving || !pwForm.current || !pwForm.new || !pwForm.confirm}
+                className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {pwSaving ? (
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <KeyRound className="w-4 h-4" />
+                )}
+                {pwSaving ? 'Updating…' : 'Update Password'}
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="space-y-4">
-          <div>
-            <label className="label">Current password</label>
-            <input type="password" className="input" value={pwForm.current} onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))} placeholder="••••••••" />
-          </div>
-          <div>
-            <label className="label">New password</label>
-            <input type="password" className="input" value={pwForm.new} onChange={(e) => setPwForm((f) => ({ ...f, new: e.target.value }))} placeholder="Min. 8 characters" />
-          </div>
-          <div>
-            <label className="label">Confirm new password</label>
-            <input type="password" className="input" value={pwForm.confirm} onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))} placeholder="••••••••" />
-          </div>
-          <div className="p-3 bg-brand-indigo-dim/50 border border-brand-indigo/20 rounded-xl mt-4 flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-brand-indigo-light flex-shrink-0 mt-0.5" />
-            <p className="text-text-muted text-xs leading-relaxed">
-              To change your password, use the secure <span className="text-brand-indigo-light">Forgot Password</span> flow on the login screen to verify via email OTP.
-            </p>
-          </div>
-        </div>
-      </div>
+      </form>
     </div>
   )
 }
@@ -192,6 +323,7 @@ function PipelineSettings() {
               ].map(({ id, label, desc }) => (
                 <button
                   key={id}
+                  type="button"
                   onClick={() => setSettings((s) => ({ ...s, llm_provider: id }))}
                   className={clsx(
                     'p-4 rounded-xl border text-left transition-all duration-200',
@@ -241,10 +373,10 @@ function SystemInfo() {
     { label: 'Re-Ranker', value: 'Cross-Encoder Score Simulation (Pure Python)' },
     { label: 'LLM Provider', value: 'Groq Cloud LPU (LLaMA 3.3 70B)' },
     { label: 'Auth', value: 'JWT (Access + Refresh) + OTP Reset' },
-    { label: 'Total Ingested Documents', value: stats?.total_documents ?? '—' },
-    { label: 'Total Chunks', value: stats?.total_chunks != null ? stats.total_chunks.toLocaleString() : '—' },
-    { label: 'Total Collections', value: stats?.collections_count ?? '—' },
-    { label: 'Query Logs', value: stats?.total_queries ?? '—' },
+    { label: 'Your Documents', value: stats?.total_documents ?? '—' },
+    { label: 'Your Chunks', value: stats?.total_chunks != null ? stats.total_chunks.toLocaleString() : '—' },
+    { label: 'Your Collections', value: stats?.collections_count ?? '—' },
+    { label: 'Your Query Logs', value: stats?.total_queries ?? '—' },
     { label: 'Avg. Confidence Score', value: stats?.avg_confidence_score != null ? `${stats.avg_confidence_score.toFixed(1)}%` : '—' },
   ]
 

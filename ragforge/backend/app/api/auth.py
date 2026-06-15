@@ -25,7 +25,6 @@ from ..models.models import User, OTPRecord
 from ..schemas.schemas import TokenResponse, UserMeResponse
 
 
-
 router = APIRouter()
 
 
@@ -46,6 +45,15 @@ class ForgotPasswordPayload(BaseModel):
 class VerifyOtpPayload(BaseModel):
     email: str
     otp: str
+    new_password: str
+
+
+class UpdateProfilePayload(BaseModel):
+    full_name: str
+
+
+class ChangePasswordPayload(BaseModel):
+    current_password: str
     new_password: str
 
 
@@ -118,6 +126,35 @@ async def login_json(form: dict, db: AsyncSession = Depends(get_db)):
 @router.get('/me', response_model=UserMeResponse)
 async def me(current_user: User = Depends(get_current_user_from_header)):
     return UserMeResponse(id=current_user.id, email=current_user.email, full_name=current_user.full_name)
+
+
+@router.put('/me', response_model=UserMeResponse)
+async def update_profile(
+    payload: UpdateProfilePayload,
+    current_user: User = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    if not payload.full_name or not payload.full_name.strip():
+        raise HTTPException(status_code=400, detail='Full name cannot be empty')
+    current_user.full_name = payload.full_name.strip()
+    await db.commit()
+    await db.refresh(current_user)
+    return UserMeResponse(id=current_user.id, email=current_user.email, full_name=current_user.full_name)
+
+
+@router.put('/me/password')
+async def change_password(
+    payload: ChangePasswordPayload,
+    current_user: User = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail='Current password is incorrect')
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail='New password must be at least 8 characters')
+    current_user.hashed_password = hash_password(payload.new_password)
+    await db.commit()
+    return {'ok': True, 'message': 'Password updated successfully'}
 
 
 @router.post('/refresh', response_model=TokenResponse)

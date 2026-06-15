@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from ..core.database import get_db
-from ..models.models import QueryLog, Document, Chunk, Collection
+from ..models.models import QueryLog, Document, Chunk, Collection, User
 from ..schemas.schemas import AskRequest, AskResponse, QueryLog as QueryLogSchema, GroundingChunk
+from .auth import get_current_user_from_header
 
 router = APIRouter()
 
@@ -25,7 +26,6 @@ _groq_key_used = None
 
 def _get_groq():
     global _groq_client, _groq_key_used
-    # Always try to load from .env file first (overrides stale env var)
     try:
         from dotenv import dotenv_values
         env_file = dotenv_values('/home/runner/workspace/ragforge/backend/.env')
@@ -34,7 +34,6 @@ def _get_groq():
         api_key = os.environ.get('GROQ_API_KEY', '')
     if not api_key:
         raise HTTPException(status_code=503, detail='GROQ_API_KEY not configured')
-    # Re-create client only if key changed
     if _groq_client is None or api_key != _groq_key_used:
         from groq import Groq
         _groq_client = Groq(api_key=api_key)
@@ -55,14 +54,12 @@ def _idf(term: str, all_chunks: list[str], corpus_size: int) -> float:
     return math.log((corpus_size - df + 0.5) / (df + 0.5) + 1)
 
 def _bm25_score(query_tokens: list[str], chunk_text: str, avg_dl: float, idf_cache: dict) -> float:
-    """BM25 scoring with k1=1.5, b=0.75."""
     k1, b = 1.5, 0.75
     chunk_lower = chunk_text.lower()
     chunk_tokens = _tokenize(chunk_text)
     dl = len(chunk_tokens)
     if not dl:
         return 0.0
-
     score = 0.0
     for qt in query_tokens:
         tf = chunk_tokens.count(qt)
@@ -71,44 +68,33 @@ def _bm25_score(query_tokens: list[str], chunk_text: str, avg_dl: float, idf_cac
         idf = idf_cache.get(qt, 1.0)
         tf_norm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / max(avg_dl, 1)))
         score += idf * tf_norm
-
-    # Proximity bonus: consecutive query terms appearing close together
     query_str = ' '.join(query_tokens)
     if len(query_tokens) >= 2:
         for i in range(len(query_tokens) - 1):
             bigram = query_tokens[i] + ' ' + query_tokens[i + 1]
             if bigram in chunk_lower:
                 score += 2.0
-
     return score
 
 def _rerank_score(query_tokens: list[str], chunk_text: str, bm25: float, rank: int) -> float:
-    """
-    Simulated cross-encoder re-ranking using:
-    - BM25 base score
-    - Query coverage ratio (what % of query terms appear)
-    - Density bonus (query terms clustered together)
-    - Position penalty (penalise very high-rank items slightly less)
-    """
     chunk_lower = chunk_text.lower()
     chunk_words = _tokenize(chunk_text)
-
-    # Term coverage
     covered = sum(1 for qt in query_tokens if qt in chunk_lower)
     coverage = covered / max(len(query_tokens), 1)
-
-    # Term density in a 100-char window
     density = 0.0
-    for i in range(0, len(chunk_lower) - 100, 50):
-        window = chunk_lower[i:i + 100]
-        hits = sum(1 for qt in query_tokens if qt in window)
-        density = max(density, hits / max(len(query_tokens), 1))
-
-    # Exact phrase match bonus
-    phrase_bonus = 2.0 if ' '.join(query_tokens[:3]) in chunk_lower else 0.0
-
-    rerank = bm25 * 0.4 + coverage * 8.0 + density * 6.0 + phrase_bonus
-    return round(rerank, 3)
+    if chunk_words:
+        positions = [i for i, w in enumerate(chunk_words) if w in query_tokens]
+        if len(positions) >= 2:
+            span = positions[-1] - positions[0] + 1
+            density = len(positions) / max(span, 1)
+    phrase_bonus = 0.0
+    if len(query_tokens) >= 2:
+        for i in range(len(query_tokens) - 1):
+            bigram = query_tokens[i] + ' ' + query_tokens[i + 1]
+            if bigram in chunk_lower:
+                phrase_bonus += 0.3
+    position_factor = 1.0 / (1 + rank * 0.05)
+    return bm25 * (1 + coverage * 0.5 + density * 0.3 + phrase_bonus) * position_factor
 
 
 async def _retrieve_chunks(
@@ -117,30 +103,26 @@ async def _retrieve_chunks(
     top_k: int,
     use_reranker: bool,
     db: AsyncSession,
-) -> list[tuple[Chunk, Document, float, float]]:
-    """
-    Returns list of (Chunk, Document, bm25_score, rerank_score).
-    """
-    stmt = (
+) -> list[tuple]:
+    res = await db.execute(
         select(Chunk, Document)
         .join(Document, Chunk.document_id == Document.id)
         .where(Document.collection_id == collection_id)
     )
-    res = await db.execute(stmt)
     rows = res.all()
-
     if not rows:
         return []
 
     query_tokens = _tokenize(question)
-    all_texts = [chunk.text for chunk, _ in rows]
-    corpus_size = len(all_texts)
-    avg_dl = sum(len(_tokenize(t)) for t in all_texts) / max(corpus_size, 1)
+    if not query_tokens:
+        return []
 
-    # Pre-compute IDF for all query terms
-    idf_cache = {qt: _idf(qt, all_texts, corpus_size) for qt in query_tokens}
+    all_chunk_texts = [row[0].text for row in rows]
+    corpus_size = len(all_chunk_texts)
+    avg_dl = sum(len(_tokenize(t)) for t in all_chunk_texts) / max(corpus_size, 1)
 
-    # BM25 pass
+    idf_cache = {qt: _idf(qt, all_chunk_texts, corpus_size) for qt in query_tokens}
+
     scored = []
     for chunk, doc in rows:
         bm25 = _bm25_score(query_tokens, chunk.text, avg_dl, idf_cache)
@@ -149,35 +131,29 @@ async def _retrieve_chunks(
     scored.sort(key=lambda x: x[2], reverse=True)
     candidates = scored[:top_k]
 
-    if not use_reranker:
-        return [(c, d, s, s) for c, d, s in candidates]
+    if use_reranker:
+        reranked = []
+        for rank, (chunk, doc, bm25) in enumerate(candidates):
+            rs = _rerank_score(query_tokens, chunk.text, bm25, rank)
+            reranked.append((chunk, doc, bm25, rs))
+        reranked.sort(key=lambda x: x[3], reverse=True)
+        return reranked
 
-    # Re-rank pass
-    reranked = []
-    for rank, (chunk, doc, bm25) in enumerate(candidates):
-        rs = _rerank_score(query_tokens, chunk.text, bm25, rank)
-        reranked.append((chunk, doc, bm25, rs))
-
-    reranked.sort(key=lambda x: x[3], reverse=True)
-    return reranked
+    return [(c, d, b, b) for c, d, b in candidates]
 
 
-# ---------------------------------------------------------------------------
-# LLM call via Groq
-# ---------------------------------------------------------------------------
 def _build_prompt(question: str, chunks: list[tuple]) -> list[dict]:
     context_parts = []
     for i, item in enumerate(chunks, 1):
-        chunk, doc = item[0], item[1]
-        context_parts.append(f"[Source {i}: {doc.original_name}, chunk {chunk.chunk_index}]\n{chunk.text}")
+        c = item[0]
+        d = item[1]
+        context_parts.append(f"[Source {i} — {d.original_name}]\n{c.text}")
     context = "\n\n---\n\n".join(context_parts)
-
     system = (
-        "You are RAG Forge, an enterprise knowledge assistant. "
         "Answer the user's question using ONLY the provided document context below. "
-        "Be concise, accurate, and cite which source(s) you used (e.g. 'According to Source 2...'). "
-        "If the context does not contain enough information to answer, say: "
-        "'I could not find sufficient information in the knowledge base to answer this question.'"
+        "Cite sources as 'According to Source N' or 'Source N states...'. "
+        "If the answer is not in the context, say so clearly. "
+        "Be concise and factual."
     )
     user = f"DOCUMENT CONTEXT:\n{context}\n\nQUESTION: {question}"
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -186,10 +162,12 @@ def _build_prompt(question: str, chunks: list[tuple]) -> list[dict]:
 def _confidence(chunks: list[tuple]) -> float:
     if not chunks:
         return 0.0
-    # Use rerank score (index 3) if available
-    top_score = chunks[0][3] if len(chunks[0]) > 3 else chunks[0][2]
-    # Normalize to 0-100
-    return min(round(top_score * 3.5, 1), 99.0)
+    scores = [item[3] for item in chunks if len(item) > 3]
+    if not scores:
+        scores = [item[2] for item in chunks]
+    top = sorted(scores, reverse=True)[:3]
+    raw = sum(top) / len(top)
+    return round(min(raw * 8, 99.0), 1)
 
 
 def _to_grounding(chunks: list[tuple], use_reranker: bool) -> list[GroundingChunk]:
@@ -214,12 +192,14 @@ def _to_grounding(chunks: list[tuple], use_reranker: bool) -> list[GroundingChun
 # Routes
 # ---------------------------------------------------------------------------
 @router.post('/ask', response_model=AskResponse)
-async def ask(payload: AskRequest, db: AsyncSession = Depends(get_db)):
+async def ask(
+    payload: AskRequest,
+    current_user: User = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
     t_start = time.time()
-
     top_chunks = await _retrieve_chunks(payload.question, payload.collection_id, payload.top_k, payload.use_reranker, db)
     retrieval_ms = int((time.time() - t_start) * 1000)
-
     t_rerank = time.time()
     rerank_ms = int((time.time() - t_rerank) * 1000)
 
@@ -251,7 +231,7 @@ async def ask(payload: AskRequest, db: AsyncSession = Depends(get_db)):
 
     qlog = QueryLog(
         id=uuid.uuid4().hex[:16],
-        user_id=1,
+        user_id=current_user.id,
         collection_id=payload.collection_id,
         question=payload.question,
         answer=answer_text,
@@ -279,11 +259,16 @@ async def ask(payload: AskRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post('/ask/stream')
-async def ask_stream(payload: AskRequest, db: AsyncSession = Depends(get_db)):
+async def ask_stream(
+    payload: AskRequest,
+    current_user: User = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
     t_start = time.time()
     top_chunks = await _retrieve_chunks(payload.question, payload.collection_id, payload.top_k, payload.use_reranker, db)
     retrieval_ms = int((time.time() - t_start) * 1000)
     rerank_ms = 0
+    user_id = current_user.id
 
     async def gen():
         if not top_chunks:
@@ -320,7 +305,7 @@ async def ask_stream(payload: AskRequest, db: AsyncSession = Depends(get_db)):
 
         qlog = QueryLog(
             id=uuid.uuid4().hex[:16],
-            user_id=1,
+            user_id=user_id,
             collection_id=payload.collection_id,
             question=payload.question,
             answer=full_answer,
@@ -352,8 +337,20 @@ async def ask_stream(payload: AskRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get('/logs', response_model=list[QueryLogSchema])
-async def get_logs(collection_id: Optional[str] = None, skip: int = 0, limit: int = 200, db: AsyncSession = Depends(get_db)):
-    stmt = select(QueryLog).order_by(QueryLog.created_at.desc()).offset(skip).limit(limit)
+async def get_logs(
+    collection_id: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 200,
+    current_user: User = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(QueryLog)
+        .where(QueryLog.user_id == current_user.id)
+        .order_by(QueryLog.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     if collection_id:
         stmt = stmt.where(QueryLog.collection_id == collection_id)
     res = await db.execute(stmt)
@@ -361,8 +358,14 @@ async def get_logs(collection_id: Optional[str] = None, skip: int = 0, limit: in
 
 
 @router.get('/logs/{id}', response_model=QueryLogSchema)
-async def get_log_detail(id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(QueryLog).where(QueryLog.id == id))
+async def get_log_detail(
+    id: str,
+    current_user: User = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(QueryLog).where(QueryLog.id == id, QueryLog.user_id == current_user.id)
+    )
     log = res.scalar_one_or_none()
     if not log:
         raise HTTPException(status_code=404, detail='Not found')

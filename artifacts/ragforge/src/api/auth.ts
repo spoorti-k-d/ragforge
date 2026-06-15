@@ -17,6 +17,16 @@ export const authApi = {
     return data
   },
 
+  updateProfile: async (full_name: string): Promise<User> => {
+    const { data } = await apiClient.put<User>('/auth/me', { full_name })
+    return data
+  },
+
+  changePassword: async (current_password: string, new_password: string): Promise<{ ok: boolean; message: string }> => {
+    const { data } = await apiClient.put('/auth/me/password', { current_password, new_password })
+    return data
+  },
+
   forgotPassword: async (email: string) => {
     const { data } = await apiClient.post('/auth/forgot-password', { email })
     return data
