@@ -14,6 +14,16 @@
 
 ---
 
+## Team
+
+| Name | Role |
+|------|------|
+| **M. Shankar Reddy** | Backend — RAG pipeline, BM25 retrieval, re-ranker, Groq LLM integration |
+| **D. Spoorti** | Full-stack — API design, document ingestion, auth, deployment |
+| **G. Mounika** | Frontend — React UI, dashboard, streaming interface, mobile responsiveness |
+
+---
+
 ## What is RAG Forge?
 
 RAG Forge is a **production-grade Retrieval-Augmented Generation (RAG) system** that ingests document libraries, retrieves relevant chunks using BM25 hybrid search, re-ranks results for semantic relevance, and delivers grounded, cited answers powered by **Groq's LPU inference** (LLaMA 3.3 70B).
@@ -32,7 +42,7 @@ RAG Forge is a **production-grade Retrieval-Augmented Generation (RAG) system** 
 - **Streaming LLM Answers** — Real-time token streaming via Groq Cloud (LLaMA 3.3 70B Versatile)
 - **Cited Sources** — Every answer references exact document chunks
 
-### Bonus Features (All Implemented)
+### Bonus Features (All Implemented ✅)
 - **Hybrid Search** — Keyword + semantic BM25 with adjustable weights
 - **Streaming Response** — Token-by-token streaming in the Ask AI interface
 - **Large PDF Support** — Multi-strategy extraction handles complex and encoded PDFs
@@ -60,7 +70,7 @@ RAG Forge is a **production-grade Retrieval-Augmented Generation (RAG) system** 
 | Retrieval | BM25 Hybrid (keyword + TF-IDF + proximity scoring) |
 | Re-Ranker | Cross-encoder simulation (coverage × density × phrase) |
 | Auth | JWT (access + refresh tokens) + OTP email reset |
-| PDF | pypdf multi-strategy text extraction |
+| PDF Extraction | pypdf multi-strategy text extraction |
 
 ---
 
@@ -117,14 +127,7 @@ pip install -r requirements.txt
 ### 3. Configure environment
 ```bash
 cp ragforge/backend/.env.example ragforge/backend/.env
-# Edit .env and add your GROQ_API_KEY
-```
-
-`.env` contents:
-```env
-GROQ_API_KEY=your_groq_api_key_here
-SECRET_KEY=your_jwt_secret_key
-DATABASE_URL=sqlite+aiosqlite:////absolute/path/to/ragforge.db
+# Edit .env and set your GROQ_API_KEY
 ```
 
 ### 4. Install frontend dependencies
@@ -145,7 +148,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 pnpm --filter @workspace/ragforge run dev
 ```
 
-Visit `http://localhost:18324`
+Open `http://localhost:18324`
 
 ---
 
@@ -158,10 +161,10 @@ Visit `http://localhost:18324`
 | GET | `/api/collections` | List collections |
 | POST | `/api/collections` | Create collection |
 | POST | `/api/documents/upload` | Upload PDF/TXT |
-| POST | `/api/rag/ask` | Ask a question (RAG pipeline) |
+| POST | `/api/rag/ask` | Ask a question (full RAG pipeline) |
 | GET | `/api/rag/history` | Query history |
 | GET | `/api/dashboard/stats` | Dashboard KPIs |
-| GET | `/api/settings/pipeline` | Pipeline config |
+| GET | `/api/settings/pipeline` | Pipeline configuration |
 
 ---
 
@@ -172,49 +175,50 @@ rag-forge-osc/
 ├── ragforge/
 │   └── backend/
 │       ├── app/
-│       │   ├── api/          # Route handlers
-│       │   │   ├── rag.py        # BM25 + reranker + Groq streaming
-│       │   │   ├── documents.py  # Upload + pypdf extraction + chunking
-│       │   │   ├── collections.py
-│       │   │   ├── auth.py       # JWT + OTP
-│       │   │   └── dashboard.py  # Analytics
-│       │   ├── core/         # DB, security, config
-│       │   ├── models/       # SQLAlchemy ORM
-│       │   └── schemas/      # Pydantic schemas
+│       │   ├── api/
+│       │   │   ├── rag.py          # BM25 + reranker + Groq streaming
+│       │   │   ├── documents.py    # Upload + pypdf extraction + chunking
+│       │   │   ├── collections.py  # Collection CRUD
+│       │   │   ├── auth.py         # JWT + OTP password reset
+│       │   │   └── dashboard.py    # Analytics + activity feed
+│       │   ├── core/               # DB, security, config
+│       │   ├── models/             # SQLAlchemy ORM models
+│       │   └── schemas/            # Pydantic request/response schemas
 │       ├── requirements.txt
-│       └── .env
+│       └── .env.example
 └── artifacts/
     └── ragforge/
         └── src/
-            ├── pages/        # React page components
-            ├── api/          # Frontend API clients
-            └── components/   # Shared UI components
+            ├── pages/              # React page components
+            ├── api/                # Frontend API clients
+            └── components/         # Shared UI components
 ```
 
 ---
 
 ## Hackathon Theme
 
-This project was built for the **OSC AI/ML Hackathon — RAG Forge Theme**:
+Built for the **OSC AI/ML Hackathon — RAG Forge Theme**:
 
 > *Build an advanced Retrieval-Augmented Generation (RAG) system that can ingest large, messy document collections and answer user questions with grounded, cited, and re-ranked results.*
 
-### Evaluation Criteria Addressed
-- **Retrieval Quality** — BM25 hybrid search with proximity scoring
-- **Re-Ranking** — Cross-encoder simulation improves answer relevance
-- **Answer Quality** — Groq LLaMA 3.3 70B with citation grounding
-- **Pipeline Observability** — Full telemetry per query (ms breakdowns)
-- **Production Readiness** — Auth, collections, history, mobile-responsive UI
+### Evaluation Criteria — All Addressed ✅
 
----
-
-## Author
-
-**Spoorti K D**  
-OSC AI/ML Hackathon — June 2026
+| Criterion | Implementation |
+|-----------|---------------|
+| Retrieval Quality | BM25 hybrid search with proximity scoring |
+| Re-Ranking | Cross-encoder simulation improves answer relevance |
+| Answer Quality | Groq LLaMA 3.3 70B with citation grounding |
+| Pipeline Observability | Full per-query telemetry (ms breakdowns) |
+| Production Readiness | Auth, collections, history, mobile-responsive UI |
+| Bonus: Hybrid search | ✅ Keyword + TF-IDF |
+| Bonus: Streaming | ✅ Token-by-token via Groq |
+| Bonus: Large PDFs | ✅ pypdf multi-strategy extraction |
+| Bonus: Re-ranker comparison | ✅ Compare page built |
+| Bonus: Confidence score | ✅ Per-query confidence metric |
 
 ---
 
 ## License
 
-MIT
+MIT — OSC AI/ML Hackathon 2026
